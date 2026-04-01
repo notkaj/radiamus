@@ -9,6 +9,7 @@ mod cli;
 mod components;
 mod config;
 mod errors;
+mod ingress;
 mod logging;
 mod tui;
 
