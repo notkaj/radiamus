@@ -1,11 +1,16 @@
+use crate::components::country::Country;
+use crate::ingress::radio_browser::ApiContext;
+
+#[derive(Default)]
 pub struct World {
-    summaries: Vec<PlaceSummary>,
+    countries: Vec<Country>,
 }
 
-struct PlaceSummary {
-    id: String,
-    geo: (f32, f32),
-    url: String,
-    title: String,
-    country: String,
+impl World {
+    async fn populate(&mut self, context: &ApiContext) -> Result<()> {
+        self.countries = context.countries().await?;
+        Ok(())
+    }
 }
+
+impl Component for World {}
