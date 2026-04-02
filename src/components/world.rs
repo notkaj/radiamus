@@ -1,13 +1,14 @@
-use std::error::Error;
-
+use color_eyre::eyre::eyre;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::widgets::List;
+use throbber_widgets_tui::Throbber;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
+use crate::action::Action;
 use crate::components::Component;
 use crate::components::country::Country;
-use crate::ingress::radio_browser::ApiContext;
+use crate::ingress::radio_browser::context;
 use radiobrowser::ApiCountry;
 
 pub struct World {
@@ -26,23 +27,53 @@ impl World {
         }
     }
 
-    pub async fn init(&self, context: &ApiContext) {
+    pub async fn connect(&self) {
         let tx = self.tx.clone();
-        tokio::spawn(Self::populate(&context, tx));
+        tokio::spawn(Self::populate(tx));
     }
 
-    pub async fn populate(context: &ApiContext, tx: Sender<Vec<Country>>) {
-        let api_countries = context.countries().await.unwrap();
+    pub async fn refresh(&mut self) {
+        self.countries = None;
+        // let tx = self.tx.clone();
+        // tokio::spawn(Self::populate(tx));
+        self.connect().await;
+    }
+
+    async fn populate(tx: Sender<Vec<Country>>) {
+        let api_countries = context().countries().await.unwrap();
         let countries = api_countries.into_iter().map(|c| c.into()).collect();
-        tx.send(countries);
+        let _ = tx.send(countries).await;
     }
 }
 impl Component for World {
-    fn draw(&mut self, frame: &mut Frame, area: Rect) -> color_eyre::Result<()> {
-        let items = self.countries.iter().map(|c| c.name.to_owned());
-        let list = List::new(items);
-        frame.render_widget(list, area);
+    fn update(
+        &mut self,
+        action: crate::action::Action,
+    ) -> color_eyre::Result<Option<crate::action::Action>> {
+        match action {
+            Action::Tick => {
+                if let Ok(c) = self.rx.try_recv() {
+                    self.countries = Some(c);
+                }
+            }
+            _ => return Ok(None),
+        }
 
+        Ok(None)
+    }
+    fn draw(&mut self, frame: &mut Frame, area: Rect) -> color_eyre::Result<()> {
+        match &self.countries {
+            Some(c) => {
+                let items = c.iter().map(|c| c.name.to_owned());
+                let list = List::new(items);
+                frame.render_widget(list, area);
+            }
+            None => {
+                // return throbber widget
+                let throbber = Throbber::default().label("Loading...");
+                frame.render_widget(throbber, area);
+            }
+        };
         Ok(())
     }
 }

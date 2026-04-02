@@ -2,12 +2,19 @@ use color_eyre::Result;
 use color_eyre::eyre::eyre;
 use radiobrowser::{self, ApiCountry, ApiStation, CountryOrder, RadioBrowserAPI};
 
-pub struct ApiContext {
+static CONTEXT: Context = Context::new();
+
+pub fn context() -> &'static Context {
+    &CONTEXT
+}
+
+#[derive(Default)]
+pub struct Context {
     api: Option<RadioBrowserAPI>,
 }
 
-impl ApiContext {
-    pub fn new() -> Self {
+impl Context {
+    pub const fn new() -> Self {
         Self { api: None }
     }
 
@@ -17,7 +24,8 @@ impl ApiContext {
         Ok(())
     }
 
-    async fn stations_by_name(&mut self, name: String) -> Result<Vec<ApiStation>> {
+    #[allow(dead_code)]
+    async fn stations_by_name(&self, name: String) -> Result<Vec<ApiStation>> {
         let Some(api) = &self.api else {
             return Err(eyre!(
                 "Coult not retrieve stations: ApiContext not initialized"

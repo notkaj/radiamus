@@ -8,7 +8,6 @@ use crate::{
     action::Action,
     components::{Component, world::World},
     config::Config,
-    ingress::radio_browser::ApiContext,
     tui::{Event, Tui},
 };
 
@@ -23,7 +22,6 @@ pub struct App {
     last_tick_key_events: Vec<KeyEvent>,
     action_tx: mpsc::UnboundedSender<Action>,
     action_rx: mpsc::UnboundedReceiver<Action>,
-    api_context: ApiContext,
 }
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -35,9 +33,7 @@ pub enum Mode {
 impl App {
     pub async fn new(tick_rate: f64, frame_rate: f64) -> color_eyre::Result<Self> {
         let (action_tx, action_rx) = mpsc::unbounded_channel();
-        let api_context = ApiContext::new().await?;
-        let mut world = World::new();
-        world.populate(&api_context).await?;
+        let world = World::new();
         Ok(Self {
             tick_rate,
             frame_rate,
@@ -50,7 +46,6 @@ impl App {
             last_tick_key_events: Vec::new(),
             action_tx,
             action_rx,
-            api_context,
         })
     }
 
