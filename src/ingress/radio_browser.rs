@@ -1,32 +1,53 @@
+use color_eyre::Result;
+use color_eyre::eyre::eyre;
 use radiobrowser::{self, ApiCountry, ApiStation, CountryOrder, RadioBrowserAPI};
-use std::error::Error;
 
 pub struct ApiContext {
-    api: RadioBrowserAPI,
+    api: Option<RadioBrowserAPI>,
 }
 
 impl ApiContext {
-    async fn new() -> Result<Self, Box<dyn Error>> {
-        let api = RadioBrowserAPI::new().await?;
-        Ok(Self { api })
+    pub fn new() -> Self {
+        Self { api: None }
     }
-    async fn stations_by_name(&mut self, name: String) -> Result<Vec<ApiStation>, Box<dyn Error>> {
-        let stations = self
-            .api
+
+    pub async fn init(&mut self) -> Result<()> {
+        let api = RadioBrowserAPI::new().await?;
+        self.api = Some(api);
+        Ok(())
+    }
+
+    async fn stations_by_name(&mut self, name: String) -> Result<Vec<ApiStation>> {
+        let Some(api) = &self.api else {
+            return Err(eyre!(
+                "Coult not retrieve stations: ApiContext not initialized"
+            ));
+        };
+
+        Ok(api
             .get_stations()
             .name(name)
             .order(radiobrowser::StationOrder::Clickcount)
             .send()
-            .await?;
-
-        Ok(stations)
+            .await?)
     }
 
-    pub async fn countries(&self) -> Result<Vec<ApiCountry>, Box<dyn Error>> {
-        self.api
-            .get_countries()
-            .order(CountryOrder::StationCount)
-            .send()
-            .await
+    pub async fn countries(&self) -> Result<Vec<ApiCountry>> {
+        let api = self.api()?;
+
+        Ok(api.get_countries().send().await?)
+    }
+
+    pub async fn countries_by_order(&self, order: CountryOrder) -> Result<Vec<ApiCountry>> {
+        Ok(self.api()?.get_countries().order(order).send().await?)
+    }
+
+    fn api(&self) -> Result<&RadioBrowserAPI> {
+        let Some(api) = &self.api else {
+            return Err(eyre!(
+                "Coult not retrieve stations: ApiContext not initialized"
+            ));
+        };
+        Ok(api)
     }
 }
