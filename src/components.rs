@@ -9,7 +9,6 @@ use crate::{action::Action, config::Config, tui::Event};
 use color_eyre::Result;
 
 pub mod country;
-pub mod place;
 pub mod world;
 
 /// `Component` is a trait that represents a visual and interactive element of the user interface.

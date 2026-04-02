@@ -94,7 +94,6 @@ impl Component for World {
                 frame.render_widget(list, area);
             }
             None => {
-                // return throbber widget
                 let throbber = Throbber::default().label("Loading...");
                 frame.render_widget(throbber, area);
             }
