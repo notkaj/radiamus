@@ -1,5 +1,4 @@
-use radiobrowser::ApiCountry;
-
+#[allow(dead_code)]
 pub struct Country {
     pub name: String,
     pub code: String,

@@ -1,4 +1,4 @@
-use color_eyre::eyre::eyre;
+use color_eyre::Result;
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::widgets::List;
@@ -6,15 +6,15 @@ use throbber_widgets_tui::Throbber;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 
 use crate::action::Action;
-use crate::components::Component;
 use crate::components::country::Country;
-use crate::ingress::radio_browser::context;
+use crate::components::{Component, Populatable};
+use crate::ingress::radio_browser::CONTEXT;
 use radiobrowser::ApiCountry;
 
 pub struct World {
     countries: Option<Vec<Country>>,
-    tx: Sender<Vec<Country>>,
-    rx: Receiver<Vec<Country>>,
+    tx: Sender<Result<Vec<Country>>>,
+    rx: Receiver<Result<Vec<Country>>>,
 }
 
 impl World {
@@ -27,33 +27,58 @@ impl World {
         }
     }
 
-    pub async fn connect(&self) {
-        let tx = self.tx.clone();
-        tokio::spawn(Self::populate(tx));
-    }
-
-    pub async fn refresh(&mut self) {
-        self.countries = None;
-        // let tx = self.tx.clone();
-        // tokio::spawn(Self::populate(tx));
-        self.connect().await;
-    }
-
-    async fn populate(tx: Sender<Vec<Country>>) {
-        let api_countries = context().countries().await.unwrap();
-        let countries = api_countries.into_iter().map(|c| c.into()).collect();
-        let _ = tx.send(countries).await;
+    async fn retreive(tx: Sender<Result<Vec<Country>>>) {
+        let guard = CONTEXT.read().await;
+        let _ = match guard.countries().await {
+            Ok(c) => {
+                let countries = c.into_iter().map(|c| c.into()).collect();
+                tx.send(Ok(countries)).await
+            }
+            Err(e) => tx.send(Err(e)).await,
+        };
     }
 }
+
+impl Populatable for World {
+    fn populate(&mut self) -> Result<()> {
+        self.countries = None;
+        let tx = self.tx.clone();
+        tokio::spawn(Self::retreive(tx));
+        Ok(())
+    }
+
+    fn refresh(&mut self) -> Result<()> {
+        self.countries = None;
+        self.populate()
+    }
+}
+
 impl Component for World {
+    fn handle_key_event(&mut self, key: crossterm::event::KeyEvent) -> Result<Option<Action>> {
+        match key.code {
+            crossterm::event::KeyCode::Char('r') => self.refresh()?,
+            crossterm::event::KeyCode::Right => (),
+            _ => (),
+        }
+
+        Ok(None)
+    }
     fn update(
         &mut self,
         action: crate::action::Action,
     ) -> color_eyre::Result<Option<crate::action::Action>> {
         match action {
             Action::Tick => {
-                if let Ok(c) = self.rx.try_recv() {
-                    self.countries = Some(c);
+                if self.countries.is_some() {
+                    return Ok(None);
+                }
+                if let Ok(r) = self.rx.try_recv() {
+                    match r {
+                        Ok(c) => {
+                            self.countries = Some(c);
+                        }
+                        Err(e) => return Err(e),
+                    }
                 }
             }
             _ => return Ok(None),

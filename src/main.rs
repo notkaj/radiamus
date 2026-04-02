@@ -20,7 +20,8 @@ async fn main() -> color_eyre::Result<()> {
 
     let args = Cli::parse();
     // TODO: handle this
-    let mut app = App::new(args.tick_rate, args.frame_rate).await?;
+    let mut app = App::new(args.tick_rate, args.frame_rate)?;
+    app.init().await?;
     app.run().await?;
     Ok(())
 }

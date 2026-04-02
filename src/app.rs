@@ -1,3 +1,5 @@
+use std::{cell::RefCell, rc::Rc};
+
 use crossterm::event::KeyEvent;
 use ratatui::prelude::Rect;
 use serde::{Deserialize, Serialize};
@@ -6,8 +8,9 @@ use tracing::{debug, info};
 
 use crate::{
     action::Action,
-    components::{Component, world::World},
+    components::{Component, Populatable, world::World},
     config::Config,
+    ingress::radio_browser::CONTEXT,
     tui::{Event, Tui},
 };
 
@@ -15,7 +18,8 @@ pub struct App {
     config: Config,
     tick_rate: f64,
     frame_rate: f64,
-    components: Vec<Box<dyn Component>>,
+    components: Vec<Rc<RefCell<dyn Component>>>,
+    populatables: Vec<Rc<RefCell<dyn Populatable>>>,
     should_quit: bool,
     should_suspend: bool,
     mode: Mode,
@@ -31,14 +35,15 @@ pub enum Mode {
 }
 
 impl App {
-    pub async fn new(tick_rate: f64, frame_rate: f64) -> color_eyre::Result<Self> {
+    pub fn new(tick_rate: f64, frame_rate: f64) -> color_eyre::Result<Self> {
         let (action_tx, action_rx) = mpsc::unbounded_channel();
-        let world = World::new();
+        let world = Rc::new(RefCell::new(World::new()));
         Ok(Self {
             tick_rate,
             frame_rate,
             // components: vec![Box::new(Home::new()), Box::new(FpsCounter::default())],
-            components: vec![Box::new(world)],
+            components: vec![world.clone()],
+            populatables: vec![world.clone()],
             should_quit: false,
             should_suspend: false,
             config: Config::new()?,
@@ -49,6 +54,17 @@ impl App {
         })
     }
 
+    pub async fn init(&mut self) -> color_eyre::Result<()> {
+        let mut guard = CONTEXT.write().await;
+        guard.init().await?;
+
+        for populatable in &self.populatables {
+            populatable.borrow_mut().populate()?;
+        }
+
+        Ok(())
+    }
+
     pub async fn run(&mut self) -> color_eyre::Result<()> {
         let mut tui = Tui::new()?
             // .mouse(true) // uncomment this line to enable mouse support
@@ -57,13 +73,17 @@ impl App {
         tui.enter()?;
 
         for component in self.components.iter_mut() {
-            component.register_action_handler(self.action_tx.clone())?;
+            component
+                .borrow_mut()
+                .register_action_handler(self.action_tx.clone())?;
         }
         for component in self.components.iter_mut() {
-            component.register_config_handler(self.config.clone())?;
+            component
+                .borrow_mut()
+                .register_config_handler(self.config.clone())?;
         }
         for component in self.components.iter_mut() {
-            component.init(tui.size()?)?;
+            component.borrow_mut().init(tui.size()?)?;
         }
 
         let action_tx = self.action_tx.clone();
@@ -99,7 +119,7 @@ impl App {
             _ => {}
         }
         for component in self.components.iter_mut() {
-            if let Some(action) = component.handle_events(Some(event.clone()))? {
+            if let Some(action) = component.borrow_mut().handle_events(Some(event.clone()))? {
                 action_tx.send(action)?;
             }
         }
@@ -149,7 +169,7 @@ impl App {
                 _ => {}
             }
             for component in self.components.iter_mut() {
-                if let Some(action) = component.update(action.clone())? {
+                if let Some(action) = component.borrow_mut().update(action.clone())? {
                     self.action_tx.send(action)?
                 };
             }
@@ -166,7 +186,7 @@ impl App {
     fn render(&mut self, tui: &mut Tui) -> color_eyre::Result<()> {
         tui.draw(|frame| {
             for component in self.components.iter_mut() {
-                if let Err(err) = component.draw(frame, frame.area()) {
+                if let Err(err) = component.borrow_mut().draw(frame, frame.area()) {
                     let _ = self
                         .action_tx
                         .send(Action::Error(format!("Failed to draw: {:?}", err)));
